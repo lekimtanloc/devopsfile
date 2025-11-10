@@ -1,0 +1,191 @@
+# CI/CD Security Workflow – Template Chuẩn 
+# I. Giai đoạn 0 – Trigger / Source
+
+# Trigger:
+
+# Push code, merge request, hoặc manual trigger.
+
+# Clone source từ Git (đảm bảo commit được signed hoặc có branch protection).
+
+# Artifacts: source code, dependency manifest (package.json, requirements.txt, go.mod, pom.xml,...)
+
+# II. Giai đoạn 1 – Static Analysis (SAST & Dependency Scan)
+
+# Mục tiêu: phát hiện sớm lỗi bảo mật, lỗi logic, và lỗ hổng trong dependency.
+
+# Bước:
+
+# SAST Scan
+
+# Tool gợi ý: SonarQube, Semgrep, CodeQL, Bandit, ESLint Security,...
+
+# Output: report JSON/XML.
+
+# Dependency Scan (Software Composition Analysis – SCA)
+
+# Tool: Trivy, Grype, Snyk, OWASP Dependency-Check,...
+
+# Output: report dependency vulnerabilities.
+
+# Secret Leak Scan
+
+# Tool: Gitleaks, TruffleHog, Detect-Secrets,...
+
+# Nếu phát hiện secrets > pause pipeline + alert.
+
+# III. Giai đoạn 2 – Testing Phase
+
+# Mục tiêu: đảm bảo code chạy đúng và đủ coverage trước khi build.
+
+# Bước:
+
+# Unit Tests / Integration Tests
+
+# Tool: pytest, jest, go test, junit,...
+
+# Functional / End-to-End Testing
+
+# Tool: Selenium, Cypress, Playwright,...
+
+# Fuzzing (nếu có)
+
+# Tool: AFL, OSS-Fuzz, libFuzzer,...
+
+# Test Coverage Report
+
+# Nếu coverage < threshold > cảnh báo hoặc dừng build.
+
+# IV. Giai đoạn 3 – Build Image & Artifact
+
+# Mục tiêu: tạo ra artifact an toàn, có thể trace nguồn gốc.
+
+# Bước:
+
+# Build container image
+
+# Tool: Docker, Buildah, Kaniko, Podman,...
+
+# Image Tagging
+
+# Tag = ${GIT_SHA_SHORT}-${DATE}-${ENV}
+
+# Push image lên registry (private/public)
+
+# Registry: ECR, GitHub Packages, Harbor, GitLab Container Registry,...
+
+# Push binary artifact (nếu có) lên MinIO/S3/Artifactory
+
+# V. Giai đoạn 4 – Image Scanning
+
+# Mục tiêu: đảm bảo image không chứa lỗ hổng đã biết.
+
+# Bước:
+
+# Tool: Trivy, Grype, Anchore, Clair,...
+
+# Nếu có lỗi:
+
+# Critical/High > pause pipeline
+
+# Medium/Low > chỉ cảnh báo.
+
+# VI. Giai đoạn 5 – Dynamic Analysis (DAST)
+
+# Mục tiêu: kiểm tra bảo mật runtime sau khi deploy tạm.
+
+# Bước:
+
+# Spin up test environment (ephemeral env)
+
+# Tool: OWASP ZAP, Burp Suite CLI, Nikto,...
+
+# Output: HTML/JSON report
+
+# Nếu phát hiện critical vuln > stop deploy.
+
+# VII. Giai đoạn 6 – Deploy
+
+# Mục tiêu: triển khai version an toàn đã được xác thực.
+
+# Bước:
+
+# Deploy lên env tương ứng (dev, staging, prod).
+
+# Tool: ArgoCD, Helm, Kustomize, Ansible, Terraform,...
+
+# VIII. Giai đoạn 7 – Post-Deploy & Artifact Archival
+
+# Mục tiêu: lưu trữ kết quả, report, và artifacts để trace audit.
+
+# Bước:
+
+# Push reports (SAST, DAST, SCA, Coverage, Build logs)
+# > lên S3 / MinIO / Elastic / DefectDojo / Security Dashboard.
+
+# Notify team
+
+# Critical/High > on-call alert (PagerDuty, Opsgenie, TeleBot,...)
+
+# Medium/Low > email/slack summary report.
+
+# IX. Giai đoạn 8 – Optional Steps
+
+# License Compliance Check
+
+# Infrastructure as Code Scan (Terraform, Helm, K8s manifest)
+
+# Tool: Checkov, Terrascan, KubeLinter,...
+
+# SBOM Generation (Software Bill of Materials)
+
+# Tool: Syft, CycloneDX,...
+
+# Policy Enforcement
+
+# Tool: OPA, Conftest, Kyverno,...
+
+stages:
+  - clone
+  - sast
+  - test
+  - build
+  - image_scan
+  - deploy
+  - post
+
+sast:
+  stage: sast
+  script:
+    - run_sast_tool.sh
+    - run_dependency_scan.sh
+    - run_secret_scan.sh
+  allow_failure: false
+
+test:
+  stage: test
+  script:
+    - run_unit_tests.sh
+    - run_coverage_check.sh
+
+build_image:
+  stage: build
+  script:
+    - docker build -t $IMAGE_TAG .
+    - docker push $REGISTRY/$IMAGE_TAG
+
+image_scan:
+  stage: image_scan
+  script:
+    - trivy image $REGISTRY/$IMAGE_TAG --exit-code 1 --severity CRITICAL,HIGH
+
+deploy:
+  stage: deploy
+  when: manual
+  script:
+    - helm upgrade --install app ./charts/
+
+post:
+  stage: post
+  script:
+    - upload_reports_to_s3.sh
+    - send_notification.sh
